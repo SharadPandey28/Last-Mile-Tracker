@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Admin Dashboard — Last-Mile Tracker</title>
+  <meta name="description" content="Admin dashboard for managing zones, rate cards, agents, and all orders."/>
+  <link rel="stylesheet" href="/css/style.css"/>
+</head>
+<body>
+
+<nav class="navbar">
+  <div class="navbar-brand">📦 Last-Mile <span>Tracker</span> <span style="font-size:0.7rem;background:rgba(79,110,247,0.2);color:var(--accent);padding:0.2rem 0.5rem;border-radius:4px;margin-left:0.5rem">ADMIN</span></div>
+  <div class="navbar-right">
+    <div class="nav-tabs">
+      <button class="nav-tab active" onclick="switchTab('orders')">Orders</button>
+      <button class="nav-tab" onclick="switchTab('zones')">Zones</button>
+      <button class="nav-tab" onclick="switchTab('rates')">Rate Cards</button>
+      <button class="nav-tab" onclick="switchTab('cod')">COD Config</button>
+      <button class="nav-tab" onclick="switchTab('agents')">Agents</button>
+    </div>
+    <button class="btn btn-secondary btn-sm" onclick="logout()">Sign out</button>
+  </div>
+</nav>
+
+<div class="page">
+
+<!-- ── ORDERS TAB ─────────────────────────────────────────────────────────── -->
+<div id="tab-orders" class="tab-content active">
+  <div class="page-header">
+    <h1>All Orders</h1>
+    <p>View, filter, assign agents, and override order status.</p>
+  </div>
+  <div id="ordersAlert"></div>
+
+  <div class="filter-bar">
+    <div class="form-group">
+      <label for="filterStatus">Status</label>
+      <select id="filterStatus">
+        <option value="">All statuses</option>
+        <option>Created</option><option>Assigned</option><option>Picked Up</option>
+        <option>In Transit</option><option>Out for Delivery</option>
+        <option>Delivered</option><option>Failed</option><option>Rescheduled</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="filterAgent">Agent ID</label>
+      <input type="text" id="filterAgent" placeholder="Agent user ID"/>
+    </div>
+    <button class="btn btn-secondary" onclick="loadOrders()">🔍 Filter</button>
+    <button class="btn btn-secondary" onclick="clearFilter()">Clear</button>
+  </div>
+
+  <div class="card">
+    <div id="ordersList"></div>
+  </div>
+</div>
+
+<!-- ── ZONES TAB ──────────────────────────────────────────────────────────── -->
+<div id="tab-zones" class="tab-content">
+  <div class="page-header">
+    <h1>Zone Management</h1>
+    <p>Define delivery zones and their associated pincodes/localities.</p>
+  </div>
+  <div id="zonesAlert"></div>
+
+  <div class="card" style="max-width:560px;margin-bottom:1.5rem">
+    <div class="card-title">➕ Add Zone</div>
+    <div class="form-group">
+      <label for="zoneName">Zone name</label>
+      <input type="text" id="zoneName" placeholder="e.g. West Zone"/>
+    </div>
+    <div class="form-group">
+      <label for="zoneAreas">Areas (comma-separated pincodes or locality names)</label>
+      <textarea id="zoneAreas" placeholder="110034, Janakpuri, Dwarka, 110058"></textarea>
+    </div>
+    <button class="btn btn-primary" onclick="createZone()">Add Zone</button>
+  </div>
+
+  <div id="zonesList"></div>
+</div>
+
+<!-- ── RATE CARDS TAB ─────────────────────────────────────────────────────── -->
+<div id="tab-rates" class="tab-content">
+  <div class="page-header">
+    <h1>Rate Cards</h1>
+    <p>Configure delivery rates by zone pair, order type, and zone relation.</p>
+  </div>
+  <div id="ratesAlert"></div>
+
+  <div class="card" style="max-width:640px;margin-bottom:1.5rem">
+    <div class="card-title">➕ Add Rate Card</div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Order type</label>
+        <select id="rcOrderType"><option value="B2C">B2C</option><option value="B2B">B2B</option></select>
+      </div>
+      <div class="form-group">
+        <label>Zone relation</label>
+        <select id="rcZoneRelation"><option value="intra">Intra-zone</option><option value="inter">Inter-zone</option></select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>From zone</label>
+        <select id="rcFromZone"></select>
+      </div>
+      <div class="form-group">
+        <label>To zone</label>
+        <select id="rcToZone"></select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Base rate (₹)</label>
+        <input type="number" id="rcBaseRate" min="0" step="0.01" placeholder="e.g. 60"/>
+      </div>
+      <div class="form-group">
+        <label>Per-kg rate (₹/kg)</label>
+        <input type="number" id="rcPerKgRate" min="0" step="0.01" placeholder="e.g. 8"/>
+      </div>
+    </div>
+    <button class="btn btn-primary" onclick="createRateCard()">Add Rate Card</button>
+  </div>
+
+  <div id="ratesList"></div>
+</div>
+
+<!-- ── COD CONFIG TAB ─────────────────────────────────────────────────────── -->
+<div id="tab-cod" class="tab-content">
+  <div class="page-header">
+    <h1>COD Surcharge Config</h1>
+    <p>Set the Cash-on-Delivery surcharge per order type.</p>
+  </div>
+  <div id="codAlert"></div>
+
+  <div class="card" style="max-width:420px;margin-bottom:1.5rem">
+    <div class="card-title">➕ Set COD Surcharge</div>
+    <div class="form-group">
+      <label>Order type</label>
+      <select id="codOrderType"><option value="B2C">B2C</option><option value="B2B">B2B</option></select>
+    </div>
+    <div class="form-group">
+      <label>Surcharge amount (₹)</label>
+      <input type="number" id="codAmount" min="0" step="0.01" placeholder="e.g. 25"/>
+    </div>
+    <button class="btn btn-primary" onclick="upsertCOD()">Save COD Config</button>
+  </div>
+
+  <div id="codList"></div>
+</div>
+
+<!-- ── AGENTS TAB ─────────────────────────────────────────────────────────── -->
+<div id="tab-agents" class="tab-content">
+  <div class="page-header">
+    <h1>Delivery Agents</h1>
+    <p>Create agent accounts and view all agents and their status.</p>
+  </div>
+  <div id="agentsAlert"></div>
+
+  <div class="card" style="max-width:560px;margin-bottom:1.5rem">
+    <div class="card-title">➕ Create Agent Account</div>
+    <div class="form-group">
+      <label>Full name</label>
+      <input type="text" id="agentName" placeholder="Agent name"/>
+    </div>
+    <div class="form-group">
+      <label>Email</label>
+      <input type="email" id="agentEmail" placeholder="agent@example.com"/>
+    </div>
+    <div class="form-group">
+      <label>Password</label>
+      <input type="password" id="agentPassword" placeholder="Min 8 characters"/>
+    </div>
+    <div class="form-group">
+      <label>Assigned zone</label>
+      <select id="agentZone"></select>
+    </div>
+    <button class="btn btn-primary" onclick="createAgent()">Create Agent</button>
+  </div>
+
+  <div class="card">
+    <div class="card-title">👷 All Agents</div>
+    <div id="agentsList"></div>
+  </div>
+</div>
+
+</div>
+
+<!-- ── Status Override Modal ──────────────────────────────────────────────── -->
+<div class="modal-overlay" id="overrideModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Override Order Status</h2>
+      <button class="modal-close" onclick="closeModal('overrideModal')">✕</button>
+    </div>
+    <p id="overrideOrderLabel" style="margin-bottom:1rem;font-size:0.85rem;color:var(--text-muted)"></p>
+    <div class="form-group">
+      <label>New status</label>
+      <select id="overrideStatus">
+        <option>Created</option><option>Assigned</option><option>Picked Up</option>
+        <option>In Transit</option><option>Out for Delivery</option>
+        <option>Delivered</option><option>Failed</option><option>Rescheduled</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Notes</label>
+      <input type="text" id="overrideNotes" placeholder="Admin override reason"/>
+    </div>
+    <div id="overrideAlert"></div>
+    <div style="display:flex;gap:0.75rem">
+      <button class="btn btn-danger" id="overrideBtn" onclick="submitOverride()">Override Status</button>
+      <button class="btn btn-secondary" onclick="closeModal('overrideModal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Manual Assign Modal ────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="assignModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Assign Agent to Order</h2>
+      <button class="modal-close" onclick="closeModal('assignModal')">✕</button>
+    </div>
+    <p id="assignOrderLabel" style="margin-bottom:1rem;font-size:0.85rem;color:var(--text-muted)"></p>
+    <div class="form-group">
+      <label>Select agent</label>
+      <select id="assignAgentSelect"></select>
+    </div>
+    <div id="assignAlert"></div>
+    <div style="display:flex;gap:0.75rem">
+      <button class="btn btn-primary" id="assignBtn" onclick="submitAssign()">Assign</button>
+      <button class="btn btn-secondary" onclick="closeModal('assignModal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Tracking Modal ─────────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="trackModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Order Tracking</h2>
+      <button class="modal-close" onclick="closeModal('trackModal')">✕</button>
+    </div>
+    <div id="trackContent"></div>
+  </div>
+</div>
+
+<!-- ── Zone Edit Modal ─────────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="zoneEditModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Edit Zone</h2>
+      <button class="modal-close" onclick="closeModal('zoneEditModal')">✕</button>
+    </div>
+    <div class="form-group">
+      <label>Zone name</label>
+      <input type="text" id="editZoneName"/>
+    </div>
+    <div class="form-group">
+      <label>Areas (comma-separated)</label>
+      <textarea id="editZoneAreas"></textarea>
+    </div>
+    <div id="zoneEditAlert"></div>
+    <div style="display:flex;gap:0.75rem">
+      <button class="btn btn-primary" onclick="submitZoneEdit()">Save Changes</button>
+      <button class="btn btn-secondary" onclick="closeModal('zoneEditModal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '';
+let selectedOrderId = null;
+let editingZoneId = null;
+let allAgents = [];
+let allZones  = [];
+
+// ── Auth ─────────────────────────────────────────────────────────────────────
+const token = localStorage.getItem('lmt_token');
+const role  = localStorage.getItem('lmt_role');
+if (!token) { location.href = '/login.html'; }
+if (role && role !== 'admin') { location.href = '/login.html'; }
+
+function authHeaders() {
+  return {'Content-Type':'application/json','Authorization':'Bearer '+token};
+}
+function logout() { localStorage.clear(); location.href = '/login.html'; }
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  event.target.classList.add('active');
+  if (name === 'orders') loadOrders();
+  else if (name === 'zones') loadZones();
+  else if (name === 'rates') { loadZonesForDropdowns(); loadRateCards(); }
+  else if (name === 'cod') loadCOD();
+  else if (name === 'agents') { loadZonesForDropdowns(); loadAgents(); }
+}
+
+function statusBadge(s) {
+  const map = {
+    'Created':'badge-created','Assigned':'badge-assigned',
+    'Picked Up':'badge-picked','In Transit':'badge-transit',
+    'Out for Delivery':'badge-out','Delivered':'badge-delivered',
+    'Failed':'badge-failed','Rescheduled':'badge-rescheduled'
+  };
+  return `<span class="badge ${map[s]||'badge-created'}">${s}</span>`;
+}
+
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+// ── ORDERS ────────────────────────────────────────────────────────────────────
+async function loadOrders() {
+  const el = document.getElementById('ordersList');
+  el.innerHTML = '<p style="color:var(--text-muted);padding:1rem 0">Loading…</p>';
+  const params = new URLSearchParams();
+  const st = document.getElementById('filterStatus').value;
+  const ag = document.getElementById('filterAgent').value.trim();
+  if (st) params.append('status', st);
+  if (ag) params.append('agent', ag);
+
+  try {
+    const res = await fetch(`${API}/api/admin/orders?${params}`, {headers: authHeaders()});
+    if (res.status === 401) { logout(); return; }
+    const orders = await res.json();
+
+    if (!orders.length) {
+      el.innerHTML = '<div class="empty-state"><div class="icon">📭</div><p>No orders found.</p></div>';
+      return;
+    }
+    el.innerHTML = `<div class="table-wrap"><table>
+      <thead><tr>
+        <th>Order ID</th><th>Customer</th><th>Pickup</th><th>Drop</th>
+        <th>Type</th><th>Charge</th><th>Status</th><th>Agent</th><th>Actions</th>
+      </tr></thead>
+      <tbody>${orders.map(o => `<tr>
+        <td><code style="font-size:0.72rem;color:var(--accent)">${o._id.slice(-8)}</code></td>
+        <td style="font-size:0.8rem">${o.customer_id.slice(-8)}</td>
+        <td style="font-size:0.78rem;max-width:140px">${o.pickup_address.substring(0,50)}</td>
+        <td style="font-size:0.78rem;max-width:140px">${o.drop_address.substring(0,50)}</td>
+        <td>${o.order_type}</td>
+        <td style="font-weight:600">₹${(o.calculated_charge||0).toFixed(2)}</td>
+        <td>${statusBadge(o.current_status)}</td>
+        <td style="font-size:0.78rem;color:var(--text-muted)">${o.assigned_agent_id ? o.assigned_agent_id.slice(-8) : '—'}</td>
+        <td>
+          <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
+            <button class="btn btn-secondary btn-sm" onclick="viewTracking('${o._id}')">Track</button>
+            <button class="btn btn-warning btn-sm" onclick="openOverride('${o._id}','${o.current_status}')">Override</button>
+            <button class="btn btn-primary btn-sm" onclick="openAssign('${o._id}')">Assign</button>
+          </div>
+        </td>
+      </tr>`).join('')}
+      </tbody></table></div>`;
+  } catch(e) {
+    document.getElementById('ordersAlert').innerHTML =
+      `<div class="alert alert-error">Error: ${e.message}</div>`;
+  }
+}
+
+function clearFilter() {
+  document.getElementById('filterStatus').value = '';
+  document.getElementById('filterAgent').value = '';
+  loadOrders();
+}
+
+// Override modal
+function openOverride(orderId, currentStatus) {
+  selectedOrderId = orderId;
+  document.getElementById('overrideOrderLabel').textContent =
+    `Order: …${orderId.slice(-8)} | Current: ${currentStatus}`;
+  document.getElementById('overrideAlert').innerHTML = '';
+  document.getElementById('overrideModal').classList.add('open');
+}
+async function submitOverride() {
+  const newStatus = document.getElementById('overrideStatus').value;
+  const notes = document.getElementById('overrideNotes').value.trim() || null;
+  const btn = document.getElementById('overrideBtn');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+  try {
+    const res = await fetch(`${API}/api/admin/orders/${selectedOrderId}/status`, {
+      method: 'PATCH', headers: authHeaders(),
+      body: JSON.stringify({new_status: newStatus, notes}),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Override failed');
+    closeModal('overrideModal');
+    loadOrders();
+    document.getElementById('ordersAlert').innerHTML =
+      `<div class="alert alert-success">Status overridden to <strong>${newStatus}</strong></div>`;
+    setTimeout(() => document.getElementById('ordersAlert').innerHTML = '', 4000);
+  } catch(e) {
+    document.getElementById('overrideAlert').innerHTML =
+      `<div class="alert alert-error">${e.message}</div>`;
+  } finally { btn.disabled = false; btn.innerHTML = 'Override Status'; }
+}
+
+// Assign modal
+async function openAssign(orderId) {
+  selectedOrderId = orderId;
+  document.getElementById('assignOrderLabel').textContent = `Order: …${orderId.slice(-8)}`;
+  document.getElementById('assignAlert').innerHTML = '';
+  // Populate agents
+  const sel = document.getElementById('assignAgentSelect');
+  sel.innerHTML = allAgents.map(a =>
+    `<option value="${a._id}">${a.name} (${a.agent_status}) — Zone: ${a.zone||'?'}</option>`
+  ).join('') || '<option>No agents found</option>';
+  document.getElementById('assignModal').classList.add('open');
+}
+async function submitAssign() {
+  const agentId = document.getElementById('assignAgentSelect').value;
+  const btn = document.getElementById('assignBtn');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+  try {
+    const res = await fetch(`${API}/api/admin/orders/${selectedOrderId}/assign`, {
+      method: 'POST', headers: authHeaders(),
+      body: JSON.stringify({agent_id: agentId}),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Assignment failed');
+    closeModal('assignModal');
+    loadOrders();
+    document.getElementById('ordersAlert').innerHTML =
+      `<div class="alert alert-success">Agent assigned successfully.</div>`;
+    setTimeout(() => document.getElementById('ordersAlert').innerHTML = '', 4000);
+  } catch(e) {
+    document.getElementById('assignAlert').innerHTML =
+      `<div class="alert alert-error">${e.message}</div>`;
+  } finally { btn.disabled = false; btn.innerHTML = 'Assign'; }
+}
+
+// Tracking
+async function viewTracking(orderId) {
+  document.getElementById('trackModal').classList.add('open');
+  document.getElementById('trackContent').innerHTML = '<p style="color:var(--text-muted)">Loading…</p>';
+  try {
+    const res = await fetch(`${API}/api/tracking/${orderId}`, {headers: authHeaders()});
+    const tracking = await res.json();
+    document.getElementById('trackContent').innerHTML = tracking.length
+      ? `<div class="timeline">${tracking.map(t => `
+          <div class="timeline-item">
+            <div class="timeline-dot ${t.status==='Delivered'?'success':t.status==='Failed'?'danger':''}"></div>
+            <div class="timeline-status">${t.status}</div>
+            <div class="timeline-meta">${new Date(t.timestamp).toLocaleString()} · ${t.actor_role}</div>
+            ${t.notes ? `<div class="timeline-note">${t.notes}</div>` : ''}
+          </div>`).join('')}</div>`
+      : '<p class="text-muted">No events yet.</p>';
+  } catch(e) {
+    document.getElementById('trackContent').innerHTML =
+      `<div class="alert alert-error">${e.message}</div>`;
+  }
+}
+
+// ── ZONES ─────────────────────────────────────────────────────────────────────
+async function loadZones() {
+  const el = document.getElementById('zonesList');
+  el.innerHTML = '<p style="color:var(--text-muted)">Loading…</p>';
+  try {
+    const res = await fetch(`${API}/api/admin/zones`, {headers: authHeaders()});
+    allZones = await res.json();
+    if (!allZones.length) {
+      el.innerHTML = '<div class="empty-state"><div class="icon">🗺</div><p>No zones yet.</p></div>';
+      return;
+    }
+    el.innerHTML = `<div class="card"><div class="table-wrap"><table>
+      <thead><tr><th>Zone Name</th><th>Areas</th><th>Actions</th></tr></thead>
+      <tbody>${allZones.map(z => `<tr>
+        <td style="font-weight:600">${z.name}</td>
+        <td style="font-size:0.8rem;color:var(--text-muted)">${z.areas.join(', ')}</td>
+        <td>
+          <div style="display:flex;gap:0.5rem">
+            <button class="btn btn-secondary btn-sm" onclick="openZoneEdit('${z._id}','${z.name}','${z.areas.join(',')}')">Edit</button>
+            <button class="btn btn-danger btn-sm" onclick="deleteZone('${z._id}')">Delete</button>
+          </div>
+        </td>
+      </tr>`).join('')}
+      </tbody></table></div></div>`;
+  } catch(e) {
+    document.getElementById('zonesAlert').innerHTML = `<div class="alert alert-error">${e.message}</div>`;
+  }
+}
+
+async function createZone() {
+  const name  = document.getElementById('zoneName').value.trim();
+  const areas = document.getElementById('zoneAreas').value
+    .split(',').map(s => s.trim()).filter(Boolean);
+  if (!name || !areas.length) {
+    document.getElementById('zonesAlert').innerHTML =
+      '<div class="alert alert-error">Zone name and areas are required.</div>';
+    return;
+  }
+  const res = await fetch(`${API}/api/admin/zones`, {
+    method:'POST', headers: authHeaders(), body: JSON.stringify({name, areas}),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    document.getElementById('zonesAlert').innerHTML = `<div class="alert alert-error">${data.detail}</div>`;
+    return;
+  }
+  document.getElementById('zoneName').value = '';
+  document.getElementById('zoneAreas').value = '';
+  document.getElementById('zonesAlert').innerHTML = `<div class="alert alert-success">Zone "${name}" created.</div>`;
+  setTimeout(() => document.getElementById('zonesAlert').innerHTML = '', 3000);
+  loadZones();
+}
+
+function openZoneEdit(id, name, areas) {
+  editingZoneId = id;
+  document.getElementById('editZoneName').value = name;
+  document.getElementById('editZoneAreas').value = areas.replace(/,/g, ', ');
+  document.getElementById('zoneEditAlert').innerHTML = '';
+  document.getElementById('zoneEditModal').classList.add('open');
+}
+
+async function submitZoneEdit() {
+  const name  = document.getElementById('editZoneName').value.trim();
+  const areas = document.getElementById('editZoneAreas').value
+    .split(',').map(s => s.trim()).filter(Boolean);
+  const res = await fetch(`${API}/api/admin/zones/${editingZoneId}`, {
+    method: 'PUT', headers: authHeaders(), body: JSON.stringify({name, areas}),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    document.getElementById('zoneEditAlert').innerHTML = `<div class="alert alert-error">${data.detail}</div>`;
+    return;
+  }
+  closeModal('zoneEditModal');
+  loadZones();
+}
+
+async function deleteZone(id) {
+  if (!confirm('Delete this zone? This may break existing rate cards.')) return;
+  await fetch(`${API}/api/admin/zones/${id}`, {method:'DELETE', headers: authHeaders()});
+  loadZones();
+}
+
+// ── RATE CARDS ────────────────────────────────────────────────────────────────
+async function loadZonesForDropdowns() {
+  const res = await fetch(`${API}/api/admin/zones`, {headers: authHeaders()});
+  allZones = await res.json();
+  const opts = allZones.map(z => `<option value="${z._id}">${z.name}</option>`).join('');
+  ['rcFromZone','rcToZone','agentZone'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = opts || '<option>No zones — add one first</option>';
+  });
+}
+
+async function loadRateCards() {
+  const el = document.getElementById('ratesList');
+  el.innerHTML = '<p style="color:var(--text-muted)">Loading…</p>';
+  const res = await fetch(`${API}/api/admin/rate-cards`, {headers: authHeaders()});
+  const cards = await res.json();
+  if (!cards.length) {
+    el.innerHTML = '<div class="empty-state"><div class="icon">💳</div><p>No rate cards yet.</p></div>';
+    return;
+  }
+  const zoneMap = Object.fromEntries(allZones.map(z => [z._id, z.name]));
+  el.innerHTML = `<div class="card"><div class="table-wrap"><table>
+    <thead><tr><th>Type</th><th>Relation</th><th>From</th><th>To</th>
+    <th>Base Rate</th><th>Per Kg</th><th>Actions</th></tr></thead>
+    <tbody>${cards.map(c => `<tr>
+      <td>${c.order_type}</td><td>${c.zone_relation}</td>
+      <td>${zoneMap[c.from_zone_id]||c.from_zone_id}</td>
+      <td>${zoneMap[c.to_zone_id]||c.to_zone_id}</td>
+      <td>₹${c.base_rate}</td><td>₹${c.per_kg_rate}/kg</td>
+      <td><button class="btn btn-danger btn-sm" onclick="deleteRateCard('${c._id}')">Delete</button></td>
+    </tr>`).join('')}
+    </tbody></table></div></div>`;
+}
+
+async function createRateCard() {
+  const body = {
+    order_type:    document.getElementById('rcOrderType').value,
+    zone_relation: document.getElementById('rcZoneRelation').value,
+    from_zone_id:  document.getElementById('rcFromZone').value,
+    to_zone_id:    document.getElementById('rcToZone').value,
+    base_rate:     parseFloat(document.getElementById('rcBaseRate').value),
+    per_kg_rate:   parseFloat(document.getElementById('rcPerKgRate').value),
+  };
+  if (!body.from_zone_id || !body.to_zone_id || isNaN(body.base_rate) || isNaN(body.per_kg_rate)) {
+    document.getElementById('ratesAlert').innerHTML =
+      '<div class="alert alert-error">All fields are required.</div>';
+    return;
+  }
+  const res = await fetch(`${API}/api/admin/rate-cards`, {
+    method: 'POST', headers: authHeaders(), body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    document.getElementById('ratesAlert').innerHTML = `<div class="alert alert-error">${data.detail}</div>`;
+    return;
+  }
+  document.getElementById('ratesAlert').innerHTML =
+    '<div class="alert alert-success">Rate card created.</div>';
+  setTimeout(() => document.getElementById('ratesAlert').innerHTML = '', 3000);
+  loadRateCards();
+}
+
+async function deleteRateCard(id) {
+  if (!confirm('Delete this rate card?')) return;
+  await fetch(`${API}/api/admin/rate-cards/${id}`, {method:'DELETE', headers: authHeaders()});
+  loadRateCards();
+}
+
+// ── COD CONFIG ────────────────────────────────────────────────────────────────
+async function loadCOD() {
+  const res = await fetch(`${API}/api/admin/cod-surcharge`, {headers: authHeaders()});
+  const configs = await res.json();
+  const el = document.getElementById('codList');
+  el.innerHTML = `<div class="card"><div class="table-wrap"><table>
+    <thead><tr><th>Order Type</th><th>Surcharge (₹)</th><th>Updated</th><th>Actions</th></tr></thead>
+    <tbody>${configs.map(c => `<tr>
+      <td>${c.order_type}</td>
+      <td style="font-weight:600">₹${c.surcharge_amount}</td>
+      <td style="font-size:0.78rem;color:var(--text-muted)">${c.updated_at ? new Date(c.updated_at).toLocaleString() : '—'}</td>
+      <td><button class="btn btn-danger btn-sm" onclick="deleteCOD('${c.order_type}')">Delete</button></td>
+    </tr>`).join('')}
+    </tbody></table></div></div>`;
+}
+
+async function upsertCOD() {
+  const body = {
+    order_type: document.getElementById('codOrderType').value,
+    surcharge_amount: parseFloat(document.getElementById('codAmount').value),
+  };
+  if (isNaN(body.surcharge_amount)) {
+    document.getElementById('codAlert').innerHTML =
+      '<div class="alert alert-error">Enter a valid surcharge amount.</div>';
+    return;
+  }
+  const res = await fetch(`${API}/api/admin/cod-surcharge`, {
+    method:'POST', headers: authHeaders(), body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    document.getElementById('codAlert').innerHTML = `<div class="alert alert-error">${data.detail}</div>`;
+    return;
+  }
+  document.getElementById('codAlert').innerHTML =
+    '<div class="alert alert-success">COD surcharge saved.</div>';
+  setTimeout(() => document.getElementById('codAlert').innerHTML = '', 3000);
+  loadCOD();
+}
+
+async function deleteCOD(orderType) {
+  if (!confirm(`Delete COD config for ${orderType}?`)) return;
+  await fetch(`${API}/api/admin/cod-surcharge/${orderType}`, {method:'DELETE', headers: authHeaders()});
+  loadCOD();
+}
+
+// ── AGENTS ────────────────────────────────────────────────────────────────────
+async function loadAgents() {
+  const res = await fetch(`${API}/api/admin/agents`, {headers: authHeaders()});
+  allAgents = await res.json();
+  const el = document.getElementById('agentsList');
+  if (!allAgents.length) {
+    el.innerHTML = '<div class="empty-state"><div class="icon">👷</div><p>No agents yet.</p></div>';
+    return;
+  }
+  const zoneMap = Object.fromEntries(allZones.map(z => [z._id, z.name]));
+  el.innerHTML = `<div class="table-wrap"><table>
+    <thead><tr><th>Name</th><th>Email</th><th>Zone</th><th>Status</th><th>Created</th></tr></thead>
+    <tbody>${allAgents.map(a => `<tr>
+      <td style="font-weight:500">${a.name}</td>
+      <td style="font-size:0.85rem">${a.email}</td>
+      <td>${zoneMap[a.zone]||a.zone||'—'}</td>
+      <td><span class="badge ${a.agent_status==='available'?'badge-delivered':'badge-assigned'}">${a.agent_status}</span></td>
+      <td style="font-size:0.78rem;color:var(--text-muted)">${a.created_at ? new Date(a.created_at).toLocaleDateString() : '—'}</td>
+    </tr>`).join('')}
+    </tbody></table>`;
+}
+
+async function createAgent() {
+  const body = {
+    name:     document.getElementById('agentName').value.trim(),
+    email:    document.getElementById('agentEmail').value.trim(),
+    password: document.getElementById('agentPassword').value,
+    zone:     document.getElementById('agentZone').value,
+  };
+  if (!body.name || !body.email || !body.password || !body.zone) {
+    document.getElementById('agentsAlert').innerHTML =
+      '<div class="alert alert-error">All fields are required.</div>';
+    return;
+  }
+  const res = await fetch(`${API}/api/admin/agents`, {
+    method: 'POST', headers: authHeaders(), body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    document.getElementById('agentsAlert').innerHTML = `<div class="alert alert-error">${data.detail}</div>`;
+    return;
+  }
+  document.getElementById('agentName').value = '';
+  document.getElementById('agentEmail').value = '';
+  document.getElementById('agentPassword').value = '';
+  document.getElementById('agentsAlert').innerHTML =
+    `<div class="alert alert-success">Agent "${body.name}" created.</div>`;
+  setTimeout(() => document.getElementById('agentsAlert').innerHTML = '', 3000);
+  loadAgents();
+}
+
+// Initial load
+loadOrders();
+// Pre-load agents for assign modal
+fetch(`${API}/api/admin/agents`, {headers: authHeaders()})
+  .then(r => r.json()).then(data => { allAgents = data; }).catch(() => {});
+fetch(`${API}/api/admin/zones`, {headers: authHeaders()})
+  .then(r => r.json()).then(data => { allZones = data; }).catch(() => {});
+</script>
+</body>
+</html>

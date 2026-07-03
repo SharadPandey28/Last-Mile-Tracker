@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Register — Last-Mile Tracker</title>
+  <meta name="description" content="Create a customer account on the Last-Mile Delivery Tracker platform."/>
+  <link rel="stylesheet" href="/css/style.css"/>
+</head>
+<body>
+<div class="auth-wrapper">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <div class="logo-icon">📦</div>
+      <h1>Last-Mile <span style="color:var(--accent)">Tracker</span></h1>
+      <p>Create your customer account</p>
+    </div>
+
+    <div id="alertBox"></div>
+
+    <form id="registerForm">
+      <div class="form-group">
+        <label for="name">Full name</label>
+        <input type="text" id="name" placeholder="Jane Doe" required autocomplete="name"/>
+      </div>
+      <div class="form-group">
+        <label for="email">Email address</label>
+        <input type="email" id="email" placeholder="you@example.com" required autocomplete="email"/>
+      </div>
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" placeholder="Min. 8 characters" required
+               autocomplete="new-password" minlength="8"/>
+      </div>
+      <button type="submit" class="btn btn-primary btn-full" id="regBtn">
+        Create account
+      </button>
+    </form>
+
+    <p style="text-align:center;margin-top:1.5rem;font-size:0.875rem;color:var(--text-muted)">
+      Already have an account?
+      <a href="/login.html">Sign in</a>
+    </p>
+    <p style="text-align:center;margin-top:0.5rem;font-size:0.78rem;color:var(--text-muted)">
+      Delivery agents are created by admins and cannot self-register.
+    </p>
+  </div>
+</div>
+
+<script>
+  const API = '';
+
+  if (localStorage.getItem('lmt_token')) {
+    location.href = '/customer_dashboard.html';
+  }
+
+  function showAlert(msg, type='error') {
+    document.getElementById('alertBox').innerHTML =
+      `<div class="alert alert-${type}">${msg}</div>`;
+  }
+
+  document.getElementById('registerForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const btn = document.getElementById('regBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Creating…';
+
+    const name     = document.getElementById('name').value.trim();
+    const email    = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+
+    try {
+      const res = await fetch(`${API}/api/auth/register`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name, email, password}),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Registration failed');
+
+      localStorage.setItem('lmt_token',   data.access_token);
+      localStorage.setItem('lmt_role',    data.role);
+      localStorage.setItem('lmt_user_id', data.user_id);
+      localStorage.setItem('lmt_name',    data.name);
+
+      showAlert('Account created! Redirecting…', 'success');
+      setTimeout(() => { location.href = '/customer_dashboard.html'; }, 800);
+    } catch (err) {
+      showAlert(err.message);
+      btn.disabled = false;
+      btn.innerHTML = 'Create account';
+    }
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: last-mile-tracker
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: MONGO_URI
+        sync: false   # Set in Render dashboard — never commit to source
+      - key: MONGO_DB_NAME
+        value: last_mile_tracker
+      - key: JWT_SECRET
+        sync: false   # Generate a random 32+ char string in Render dashboard
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "60"
+      - key: EMAIL_SENDER
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: APP_ENV
+        value: production
+    healthCheckPath: /api/health

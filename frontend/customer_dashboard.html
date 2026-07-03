@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Customer Dashboard — Last-Mile Tracker</title>
+  <meta name="description" content="Track your deliveries, place new orders, and manage reschedules."/>
+  <link rel="stylesheet" href="/css/style.css"/>
+</head>
+<body>
+
+<!-- Navbar -->
+<nav class="navbar">
+  <div class="navbar-brand">📦 Last-Mile <span>Tracker</span></div>
+  <div class="navbar-right">
+    <div class="nav-tabs">
+      <button class="nav-tab active" onclick="switchTab('orders')">My Orders</button>
+      <button class="nav-tab" onclick="switchTab('place')">Place Order</button>
+    </div>
+    <span class="navbar-user" id="userName"></span>
+    <button class="btn btn-secondary btn-sm" onclick="logout()">Sign out</button>
+  </div>
+</nav>
+
+<!-- Main content -->
+<div class="page">
+
+  <!-- ── My Orders Tab ─────────────────────────────────────────────────────── -->
+  <div id="tab-orders" class="tab-content active">
+    <div class="page-header">
+      <h1>My Orders</h1>
+      <p>Track and manage your deliveries</p>
+    </div>
+    <div id="ordersAlert"></div>
+    <div id="ordersList"></div>
+  </div>
+
+  <!-- ── Place Order Tab ──────────────────────────────────────────────────── -->
+  <div id="tab-place" class="tab-content">
+    <div class="page-header">
+      <h1>Place New Order</h1>
+      <p>Fill in the details below to get a charge estimate, then confirm your order.</p>
+    </div>
+    <div id="placeAlert"></div>
+
+    <div style="max-width:680px">
+      <div class="card">
+        <div class="card-title">📍 Addresses</div>
+        <div class="form-group">
+          <label for="pickupAddress">Pickup address (include pincode or locality)</label>
+          <textarea id="pickupAddress" placeholder="e.g. 123 Main St, Karol Bagh, 110001"></textarea>
+        </div>
+        <div class="form-group">
+          <label for="dropAddress">Delivery address (include pincode or locality)</label>
+          <textarea id="dropAddress" placeholder="e.g. 456 Park Ave, Hauz Khas, 110017"></textarea>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">📦 Package Details</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="dimL">Length (cm)</label>
+            <input type="number" id="dimL" min="0.1" step="0.1" placeholder="e.g. 30"/>
+          </div>
+          <div class="form-group">
+            <label for="dimB">Breadth (cm)</label>
+            <input type="number" id="dimB" min="0.1" step="0.1" placeholder="e.g. 20"/>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="dimH">Height (cm)</label>
+            <input type="number" id="dimH" min="0.1" step="0.1" placeholder="e.g. 15"/>
+          </div>
+          <div class="form-group">
+            <label for="actualWeight">Actual weight (kg)</label>
+            <input type="number" id="actualWeight" min="0.01" step="0.01" placeholder="e.g. 2.5"/>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="orderType">Order type</label>
+            <select id="orderType">
+              <option value="B2C">B2C (Business to Consumer)</option>
+              <option value="B2B">B2B (Business to Business)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="paymentType">Payment type</label>
+            <select id="paymentType">
+              <option value="prepaid">Prepaid</option>
+              <option value="COD">Cash on Delivery (COD)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:1rem;margin-top:1rem">
+        <button class="btn btn-secondary" id="calcBtn" onclick="calculateCharge()">
+          🧮 Calculate Charge
+        </button>
+        <button class="btn btn-primary" id="confirmBtn" onclick="confirmOrder()" disabled>
+          ✅ Confirm & Place Order
+        </button>
+      </div>
+
+      <!-- Charge breakdown shown after calculate -->
+      <div id="breakdownBox" class="hidden"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Order Detail Modal ──────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="orderModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Order Details</h2>
+      <button class="modal-close" onclick="closeModal('orderModal')">✕</button>
+    </div>
+    <div id="modalContent"></div>
+  </div>
+</div>
+
+<!-- ── Reschedule Modal ─────────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="rescheduleModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Reschedule Delivery</h2>
+      <button class="modal-close" onclick="closeModal('rescheduleModal')">✕</button>
+    </div>
+    <div id="rescheduleContent">
+      <p style="margin-bottom:1rem">Choose a new delivery date for your failed order.</p>
+      <div class="form-group">
+        <label for="rescheduleDate">New delivery date</label>
+        <input type="datetime-local" id="rescheduleDate"/>
+      </div>
+      <div id="rescheduleAlert"></div>
+      <button class="btn btn-primary" onclick="submitReschedule()">Submit Reschedule</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '';
+let lastBreakdown = null;
+let rescheduleOrderId = null;
+
+// ── Auth guard ──────────────────────────────────────────────────────────────
+const token = localStorage.getItem('lmt_token');
+const role  = localStorage.getItem('lmt_role');
+if (!token) { location.href = '/login.html'; }
+if (role && role !== 'customer') { location.href = '/login.html'; }
+document.getElementById('userName').textContent = '👤 ' + (localStorage.getItem('lmt_name') || '');
+
+function authHeaders() {
+  return {'Content-Type':'application/json','Authorization':'Bearer '+token};
+}
+function logout() {
+  localStorage.clear(); location.href = '/login.html';
+}
+
+// ── Tab switching ───────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  event.target.classList.add('active');
+  if (name === 'orders') loadOrders();
+}
+
+// ── Status badge ────────────────────────────────────────────────────────────
+function statusBadge(s) {
+  const map = {
+    'Created':'badge-created','Assigned':'badge-assigned',
+    'Picked Up':'badge-picked','In Transit':'badge-transit',
+    'Out for Delivery':'badge-out','Delivered':'badge-delivered',
+    'Failed':'badge-failed','Rescheduled':'badge-rescheduled'
+  };
+  return `<span class="badge ${map[s]||'badge-created'}">${s}</span>`;
+}
+
+// ── Load orders ──────────────────────────────────────────────────────────────
+async function loadOrders() {
+  const el = document.getElementById('ordersList');
+  el.innerHTML = '<p style="color:var(--text-muted)">Loading…</p>';
+  try {
+    const res = await fetch(`${API}/api/customer/orders`, {headers: authHeaders()});
+    if (res.status === 401) { logout(); return; }
+    const orders = await res.json();
+
+    if (!orders.length) {
+      el.innerHTML = `<div class="empty-state"><div class="icon">📭</div>
+        <p>No orders yet.</p>
+        <button class="btn btn-primary mt-2" onclick="switchTab('place');document.querySelectorAll('.nav-tab')[1].classList.add('active');document.querySelectorAll('.nav-tab')[0].classList.remove('active')">
+          Place your first order
+        </button></div>`;
+      return;
+    }
+
+    el.innerHTML = `<div class="card"><div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Order ID</th><th>Route</th><th>Type</th><th>Payment</th>
+          <th>Charge</th><th>Status</th><th>Created</th><th>Actions</th>
+        </tr></thead>
+        <tbody>${orders.map(o => `
+          <tr>
+            <td><code style="font-size:0.75rem;color:var(--accent)">${o._id.slice(-8)}</code></td>
+            <td style="max-width:200px;font-size:0.8rem">${o.pickup_address.substring(0,40)}… → ${o.drop_address.substring(0,30)}…</td>
+            <td>${o.order_type}</td>
+            <td>${o.payment_type}</td>
+            <td style="font-weight:600">₹${(o.calculated_charge||0).toFixed(2)}</td>
+            <td>${statusBadge(o.current_status)}</td>
+            <td style="font-size:0.78rem;color:var(--text-muted)">${new Date(o.created_at).toLocaleDateString()}</td>
+            <td>
+              <button class="btn btn-secondary btn-sm" onclick="viewOrder('${o._id}')">View</button>
+              ${o.current_status === 'Failed' ? `<button class="btn btn-warning btn-sm" onclick="openReschedule('${o._id}')">Reschedule</button>` : ''}
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div></div>`;
+  } catch(e) {
+    document.getElementById('ordersAlert').innerHTML =
+      `<div class="alert alert-error">Failed to load orders: ${e.message}</div>`;
+  }
+}
+
+// ── View order detail + tracking ─────────────────────────────────────────────
+async function viewOrder(orderId) {
+  document.getElementById('orderModal').classList.add('open');
+  document.getElementById('modalContent').innerHTML = '<p style="color:var(--text-muted)">Loading…</p>';
+  try {
+    const [oRes, tRes] = await Promise.all([
+      fetch(`${API}/api/customer/orders/${orderId}`, {headers: authHeaders()}),
+      fetch(`${API}/api/customer/orders/${orderId}/tracking`, {headers: authHeaders()}),
+    ]);
+    const order    = await oRes.json();
+    const tracking = await tRes.json();
+
+    document.getElementById('modalContent').innerHTML = `
+      <div class="breakdown-box" style="margin-bottom:1.25rem">
+        <div class="breakdown-row"><span class="breakdown-label">Order ID</span><span class="breakdown-value" style="font-family:monospace;font-size:0.8rem">${order._id}</span></div>
+        <div class="breakdown-row"><span class="breakdown-label">Status</span><span>${statusBadge(order.current_status)}</span></div>
+        <div class="breakdown-row"><span class="breakdown-label">Type</span><span class="breakdown-value">${order.order_type} / ${order.payment_type}</span></div>
+        <div class="breakdown-row"><span class="breakdown-label">Billable weight</span><span class="breakdown-value">${order.billable_weight} kg</span></div>
+        <div class="breakdown-row total"><span>Total charge</span><span class="text-accent">₹${(order.calculated_charge||0).toFixed(2)}</span></div>
+      </div>
+      <h3 style="margin-bottom:1rem">Tracking Timeline</h3>
+      ${tracking.length ? `<div class="timeline">${tracking.map(t => `
+        <div class="timeline-item">
+          <div class="timeline-dot ${t.status==='Delivered'?'success':t.status==='Failed'?'danger':''}"></div>
+          <div class="timeline-status">${t.status}</div>
+          <div class="timeline-meta">${new Date(t.timestamp).toLocaleString()} · ${t.actor_role}</div>
+          ${t.notes ? `<div class="timeline-note">${t.notes}</div>` : ''}
+        </div>`).join('')}</div>`
+      : '<p class="text-muted">No tracking events yet.</p>'}
+      ${order.current_status === 'Failed' ? `
+        <button class="btn btn-warning mt-3" onclick="closeModal('orderModal');openReschedule('${order._id}')">
+          🗓 Reschedule Delivery
+        </button>` : ''}
+    `;
+  } catch(e) {
+    document.getElementById('modalContent').innerHTML =
+      `<div class="alert alert-error">Error: ${e.message}</div>`;
+  }
+}
+
+// ── Reschedule ───────────────────────────────────────────────────────────────
+function openReschedule(orderId) {
+  rescheduleOrderId = orderId;
+  document.getElementById('rescheduleModal').classList.add('open');
+  document.getElementById('rescheduleAlert').innerHTML = '';
+  // Set minimum date to tomorrow
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  document.getElementById('rescheduleDate').min = tomorrow.toISOString().slice(0,16);
+}
+
+async function submitReschedule() {
+  const dateVal = document.getElementById('rescheduleDate').value;
+  if (!dateVal) {
+    document.getElementById('rescheduleAlert').innerHTML =
+      '<div class="alert alert-error">Please select a date.</div>';
+    return;
+  }
+  try {
+    const res = await fetch(`${API}/api/customer/orders/${rescheduleOrderId}/reschedule`, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({reschedule_date: new Date(dateVal).toISOString()}),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Reschedule failed');
+    closeModal('rescheduleModal');
+    loadOrders();
+    document.getElementById('ordersAlert').innerHTML =
+      '<div class="alert alert-success">Delivery rescheduled successfully!</div>';
+    setTimeout(() => document.getElementById('ordersAlert').innerHTML = '', 4000);
+  } catch(e) {
+    document.getElementById('rescheduleAlert').innerHTML =
+      `<div class="alert alert-error">${e.message}</div>`;
+  }
+}
+
+// ── Calculate charge ─────────────────────────────────────────────────────────
+async function calculateCharge() {
+  const btn = document.getElementById('calcBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Calculating…';
+  document.getElementById('placeAlert').innerHTML = '';
+  document.getElementById('breakdownBox').classList.add('hidden');
+  document.getElementById('confirmBtn').disabled = true;
+  lastBreakdown = null;
+
+  const body = buildOrderBody();
+  if (!body) {
+    btn.disabled = false;
+    btn.innerHTML = '🧮 Calculate Charge';
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API}/api/customer/orders/calculate`, {
+      method: 'POST', headers: authHeaders(), body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Calculation failed');
+
+    lastBreakdown = data;
+    renderBreakdown(data);
+    document.getElementById('confirmBtn').disabled = false;
+  } catch(e) {
+    document.getElementById('placeAlert').innerHTML =
+      `<div class="alert alert-error">⚠ ${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '🧮 Calculate Charge';
+  }
+}
+
+function buildOrderBody() {
+  const pickup = document.getElementById('pickupAddress').value.trim();
+  const drop   = document.getElementById('dropAddress').value.trim();
+  const l = parseFloat(document.getElementById('dimL').value);
+  const b = parseFloat(document.getElementById('dimB').value);
+  const h = parseFloat(document.getElementById('dimH').value);
+  const w = parseFloat(document.getElementById('actualWeight').value);
+
+  if (!pickup || !drop || !l || !b || !h || !w) {
+    document.getElementById('placeAlert').innerHTML =
+      '<div class="alert alert-error">Please fill in all fields.</div>';
+    return null;
+  }
+  return {
+    pickup_address: pickup,
+    drop_address: drop,
+    dimensions: {l, b, h},
+    actual_weight: w,
+    order_type: document.getElementById('orderType').value,
+    payment_type: document.getElementById('paymentType').value,
+  };
+}
+
+function renderBreakdown(d) {
+  const box = document.getElementById('breakdownBox');
+  box.className = 'breakdown-box';
+  box.innerHTML = `
+    <h3 style="margin-bottom:1rem">💰 Charge Breakdown</h3>
+    <div class="breakdown-row"><span class="breakdown-label">Pickup zone</span><span class="breakdown-value">${d.pickup_zone_name} (${d.zone_relation}-zone)</span></div>
+    <div class="breakdown-row"><span class="breakdown-label">Drop zone</span><span class="breakdown-value">${d.drop_zone_name}</span></div>
+    <div class="breakdown-row"><span class="breakdown-label">Volumetric weight</span><span class="breakdown-value">${d.volumetric_weight} kg</span></div>
+    <div class="breakdown-row"><span class="breakdown-label">Billable weight</span><span class="breakdown-value">${d.billable_weight} kg</span></div>
+    <div class="breakdown-row"><span class="breakdown-label">Base rate</span><span class="breakdown-value">₹${d.base_rate}</span></div>
+    <div class="breakdown-row"><span class="breakdown-label">Per-kg rate</span><span class="breakdown-value">₹${d.per_kg_rate}/kg</span></div>
+    <div class="breakdown-row"><span class="breakdown-label">Base charge</span><span class="breakdown-value">₹${d.base_charge.toFixed(2)}</span></div>
+    ${d.cod_surcharge > 0 ? `<div class="breakdown-row"><span class="breakdown-label">COD surcharge</span><span class="breakdown-value">₹${d.cod_surcharge.toFixed(2)}</span></div>` : ''}
+    <div class="breakdown-row total"><span>Total charge</span><span class="text-accent">₹${d.final_charge.toFixed(2)}</span></div>
+    <p style="font-size:0.78rem;margin-top:0.75rem;color:var(--text-muted)">
+      Review the breakdown above, then click <strong>Confirm &amp; Place Order</strong>.
+    </p>
+  `;
+}
+
+// ── Confirm order ─────────────────────────────────────────────────────────────
+async function confirmOrder() {
+  if (!lastBreakdown) return;
+  const btn = document.getElementById('confirmBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Placing order…';
+
+  const body = buildOrderBody();
+  if (!body) {
+    btn.disabled = false;
+    btn.innerHTML = '✅ Confirm & Place Order';
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API}/api/customer/orders`, {
+      method: 'POST', headers: authHeaders(), body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Order placement failed');
+
+    // Reset form
+    document.getElementById('pickupAddress').value = '';
+    document.getElementById('dropAddress').value = '';
+    document.getElementById('dimL').value = '';
+    document.getElementById('dimB').value = '';
+    document.getElementById('dimH').value = '';
+    document.getElementById('actualWeight').value = '';
+    document.getElementById('breakdownBox').className = 'hidden';
+    lastBreakdown = null;
+
+    // Switch to orders tab
+    switchTab('orders');
+    document.querySelectorAll('.nav-tab')[0].classList.add('active');
+    document.querySelectorAll('.nav-tab')[1].classList.remove('active');
+
+    document.getElementById('ordersAlert').innerHTML =
+      `<div class="alert alert-success">✅ Order placed! Status: ${data.current_status}${data._assignment_warning ? '<br>⚠ ' + data._assignment_warning : ''}</div>`;
+    setTimeout(() => document.getElementById('ordersAlert').innerHTML = '', 6000);
+  } catch(e) {
+    document.getElementById('placeAlert').innerHTML =
+      `<div class="alert alert-error">${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '✅ Confirm & Place Order';
+  }
+}
+
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+}
+
+// Load on start
+loadOrders();
+</script>
+</body>
+</html>

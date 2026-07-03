@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Login — Last-Mile Tracker</title>
+  <meta name="description" content="Login to the Last-Mile Delivery Tracker platform to manage your deliveries."/>
+  <link rel="stylesheet" href="/css/style.css"/>
+</head>
+<body>
+<div class="auth-wrapper">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <div class="logo-icon">📦</div>
+      <h1>Last-Mile <span style="color:var(--accent)">Tracker</span></h1>
+      <p>Sign in to your account</p>
+    </div>
+
+    <div id="alertBox"></div>
+
+    <form id="loginForm">
+      <div class="form-group">
+        <label for="email">Email address</label>
+        <input type="email" id="email" placeholder="you@example.com" required autocomplete="email"/>
+      </div>
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" placeholder="••••••••" required autocomplete="current-password"/>
+      </div>
+      <button type="submit" class="btn btn-primary btn-full" id="loginBtn">
+        Sign in
+      </button>
+    </form>
+
+    <p style="text-align:center;margin-top:1.5rem;font-size:0.875rem;color:var(--text-muted)">
+      New customer?
+      <a href="/register.html">Create an account</a>
+    </p>
+  </div>
+</div>
+
+<script>
+  const API = '';
+
+  // Redirect if already logged in
+  if (localStorage.getItem('lmt_token')) {
+    redirectByRole(localStorage.getItem('lmt_role'));
+  }
+
+  function redirectByRole(role) {
+    if (role === 'admin')          location.href = '/admin_dashboard.html';
+    else if (role === 'delivery_agent') location.href = '/agent_dashboard.html';
+    else                            location.href = '/customer_dashboard.html';
+  }
+
+  function showAlert(msg, type='error') {
+    document.getElementById('alertBox').innerHTML =
+      `<div class="alert alert-${type}">${msg}</div>`;
+  }
+
+  document.getElementById('loginForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const btn = document.getElementById('loginBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Signing in…';
+
+    const email    = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+
+    try {
+      const res = await fetch(`${API}/api/auth/login`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({email, password}),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Login failed');
+
+      localStorage.setItem('lmt_token',   data.access_token);
+      localStorage.setItem('lmt_role',    data.role);
+      localStorage.setItem('lmt_user_id', data.user_id);
+      localStorage.setItem('lmt_name',    data.name);
+
+      redirectByRole(data.role);
+    } catch (err) {
+      showAlert(err.message);
+      btn.disabled = false;
+      btn.innerHTML = 'Sign in';
+    }
+  });
+</script>
+</body>
+</html>

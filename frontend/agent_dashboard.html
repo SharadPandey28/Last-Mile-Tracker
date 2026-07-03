@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Agent Dashboard — Last-Mile Tracker</title>
+  <meta name="description" content="Delivery agent dashboard for managing assigned orders and updating delivery status."/>
+  <link rel="stylesheet" href="/css/style.css"/>
+</head>
+<body>
+
+<nav class="navbar">
+  <div class="navbar-brand">📦 Last-Mile <span>Tracker</span></div>
+  <div class="navbar-right">
+    <span class="navbar-user" id="userName"></span>
+    <button class="btn btn-secondary btn-sm" onclick="logout()">Sign out</button>
+  </div>
+</nav>
+
+<div class="page">
+  <div class="page-header">
+    <h1>Assigned Orders</h1>
+    <p>Update delivery status for your assigned orders below.</p>
+  </div>
+
+  <div id="mainAlert"></div>
+
+  <div class="stats-row" id="statsRow">
+    <div class="stat-card"><div class="stat-label">Total Assigned</div><div class="stat-value accent" id="statTotal">—</div></div>
+    <div class="stat-card"><div class="stat-label">In Progress</div><div class="stat-value warning" id="statActive">—</div></div>
+    <div class="stat-card"><div class="stat-label">Delivered Today</div><div class="stat-value success" id="statDelivered">—</div></div>
+    <div class="stat-card"><div class="stat-label">Failed</div><div class="stat-value danger" id="statFailed">—</div></div>
+  </div>
+
+  <div class="card">
+    <div class="section-header">
+      <div class="card-title" style="margin-bottom:0">📋 Orders</div>
+      <button class="btn btn-secondary btn-sm" onclick="loadOrders()">🔄 Refresh</button>
+    </div>
+    <div id="ordersList"></div>
+  </div>
+</div>
+
+<!-- Status Update Modal -->
+<div class="modal-overlay" id="statusModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Update Order Status</h2>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div>
+      <p id="currentStatusLabel" style="margin-bottom:1rem"></p>
+      <div class="form-group">
+        <label for="newStatus">New status</label>
+        <select id="newStatus"></select>
+      </div>
+      <div class="form-group">
+        <label for="statusNote">Note (optional)</label>
+        <input type="text" id="statusNote" placeholder="e.g. Customer not available"/>
+      </div>
+      <div id="modalAlert"></div>
+      <div style="display:flex;gap:0.75rem">
+        <button class="btn btn-primary" id="updateBtn" onclick="submitStatusUpdate()">Update Status</button>
+        <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Tracking Timeline Modal -->
+<div class="modal-overlay" id="trackModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Tracking Timeline</h2>
+      <button class="modal-close" onclick="document.getElementById('trackModal').classList.remove('open')">✕</button>
+    </div>
+    <div id="trackContent"></div>
+  </div>
+</div>
+
+<script>
+const API = '';
+let selectedOrderId = null;
+
+// ── Auth ─────────────────────────────────────────────────────────────────────
+const token = localStorage.getItem('lmt_token');
+const role  = localStorage.getItem('lmt_role');
+if (!token) { location.href = '/login.html'; }
+if (role && role !== 'delivery_agent') { location.href = '/login.html'; }
+document.getElementById('userName').textContent = '🚚 ' + (localStorage.getItem('lmt_name') || '');
+
+function authHeaders() {
+  return {'Content-Type':'application/json','Authorization':'Bearer '+token};
+}
+function logout() { localStorage.clear(); location.href = '/login.html'; }
+
+// ── Status transitions available to agents ────────────────────────────────────
+const AGENT_TRANSITIONS = {
+  'Assigned':         ['Picked Up'],
+  'Picked Up':        ['In Transit', 'Failed'],
+  'In Transit':       ['Out for Delivery', 'Failed'],
+  'Out for Delivery': ['Delivered', 'Failed'],
+};
+
+function statusBadge(s) {
+  const map = {
+    'Created':'badge-created','Assigned':'badge-assigned',
+    'Picked Up':'badge-picked','In Transit':'badge-transit',
+    'Out for Delivery':'badge-out','Delivered':'badge-delivered',
+    'Failed':'badge-failed','Rescheduled':'badge-rescheduled'
+  };
+  return `<span class="badge ${map[s]||'badge-created'}">${s}</span>`;
+}
+
+async function loadOrders() {
+  const el = document.getElementById('ordersList');
+  el.innerHTML = '<p style="color:var(--text-muted);padding:1rem 0">Loading…</p>';
+  try {
+    const res = await fetch(`${API}/api/agent/orders`, {headers: authHeaders()});
+    if (res.status === 401) { logout(); return; }
+    const orders = await res.json();
+
+    // Stats
+    document.getElementById('statTotal').textContent = orders.length;
+    const terminal = ['Delivered','Failed'];
+    document.getElementById('statActive').textContent =
+      orders.filter(o => !terminal.includes(o.current_status)).length;
+    document.getElementById('statDelivered').textContent =
+      orders.filter(o => o.current_status === 'Delivered').length;
+    document.getElementById('statFailed').textContent =
+      orders.filter(o => o.current_status === 'Failed').length;
+
+    if (!orders.length) {
+      el.innerHTML = `<div class="empty-state"><div class="icon">✅</div>
+        <p>No orders assigned to you yet.</p></div>`;
+      return;
+    }
+
+    el.innerHTML = `<div class="table-wrap"><table>
+      <thead><tr>
+        <th>Order ID</th><th>Route</th><th>Type</th><th>Charge</th>
+        <th>Status</th><th>Actions</th>
+      </tr></thead>
+      <tbody>${orders.map(o => {
+        const canUpdate = !!AGENT_TRANSITIONS[o.current_status];
+        return `<tr>
+          <td><code style="font-size:0.75rem;color:var(--accent)">${o._id.slice(-8)}</code></td>
+          <td style="font-size:0.8rem;max-width:220px">
+            <div style="margin-bottom:0.25rem">${o.pickup_address.substring(0,50)}</div>
+            <div style="color:var(--text-muted)">→ ${o.drop_address.substring(0,50)}</div>
+          </td>
+          <td>${o.order_type}/${o.payment_type}</td>
+          <td style="font-weight:600">₹${(o.calculated_charge||0).toFixed(2)}</td>
+          <td>${statusBadge(o.current_status)}</td>
+          <td>
+            <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+              <button class="btn btn-secondary btn-sm" onclick="viewTracking('${o._id}')">Timeline</button>
+              ${canUpdate ? `<button class="btn btn-primary btn-sm" onclick="openStatusModal('${o._id}','${o.current_status}')">Update Status</button>` : ''}
+            </div>
+          </td>
+        </tr>`;
+      }).join('')}
+      </tbody>
+    </table></div>`;
+  } catch(e) {
+    document.getElementById('mainAlert').innerHTML =
+      `<div class="alert alert-error">Error: ${e.message}</div>`;
+  }
+}
+
+function openStatusModal(orderId, currentStatus) {
+  selectedOrderId = orderId;
+  document.getElementById('currentStatusLabel').innerHTML =
+    `Current status: ${statusBadge(currentStatus)}`;
+  document.getElementById('modalAlert').innerHTML = '';
+  document.getElementById('statusNote').value = '';
+
+  const opts = AGENT_TRANSITIONS[currentStatus] || [];
+  const sel = document.getElementById('newStatus');
+  sel.innerHTML = opts.map(s => `<option value="${s}">${s}</option>`).join('');
+
+  document.getElementById('statusModal').classList.add('open');
+}
+
+async function submitStatusUpdate() {
+  const newStatus = document.getElementById('newStatus').value;
+  const notes = document.getElementById('statusNote').value.trim() || null;
+  const btn = document.getElementById('updateBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Updating…';
+
+  try {
+    const res = await fetch(`${API}/api/agent/orders/${selectedOrderId}/status`, {
+      method: 'PATCH',
+      headers: authHeaders(),
+      body: JSON.stringify({new_status: newStatus, notes}),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || 'Update failed');
+
+    closeModal();
+    loadOrders();
+    document.getElementById('mainAlert').innerHTML =
+      `<div class="alert alert-success">Status updated to <strong>${newStatus}</strong></div>`;
+    setTimeout(() => document.getElementById('mainAlert').innerHTML = '', 4000);
+  } catch(e) {
+    document.getElementById('modalAlert').innerHTML =
+      `<div class="alert alert-error">${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = 'Update Status';
+  }
+}
+
+async function viewTracking(orderId) {
+  document.getElementById('trackModal').classList.add('open');
+  document.getElementById('trackContent').innerHTML = '<p style="color:var(--text-muted)">Loading…</p>';
+  try {
+    const res = await fetch(`${API}/api/agent/orders/${orderId}/tracking`, {headers: authHeaders()});
+    const tracking = await res.json();
+    if (!res.ok) throw new Error(tracking.detail || 'Error');
+
+    document.getElementById('trackContent').innerHTML = tracking.length
+      ? `<div class="timeline">${tracking.map(t => `
+          <div class="timeline-item">
+            <div class="timeline-dot ${t.status==='Delivered'?'success':t.status==='Failed'?'danger':''}"></div>
+            <div class="timeline-status">${t.status}</div>
+            <div class="timeline-meta">${new Date(t.timestamp).toLocaleString()} · by ${t.actor_role}</div>
+            ${t.notes ? `<div class="timeline-note">${t.notes}</div>` : ''}
+          </div>`).join('')}</div>`
+      : '<p class="text-muted">No events recorded yet.</p>';
+  } catch(e) {
+    document.getElementById('trackContent').innerHTML =
+      `<div class="alert alert-error">${e.message}</div>`;
+  }
+}
+
+function closeModal() {
+  document.getElementById('statusModal').classList.remove('open');
+  selectedOrderId = null;
+}
+
+loadOrders();
+</script>
+</body>
+</html>
